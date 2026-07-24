@@ -10,7 +10,7 @@
 - Landing page + recipient UI + sign-in shipped and screenshot-verified (dark/amber design system).
 - Verified live: CLI deploy+run of a standup logger; MCP stdio handshake + deploy-via-tool.
 - **Adversarial security review done and findings fixed** (see below). It caught a real vm-escape (host-realm `Function` via injected-object `.constructor`) plus auth/DoS issues — all fixed and regression-tested.
-- **Open-source-ready and self-hostable.** MIT LICENSE, SECURITY.md, CONTRIBUTING.md, LAUNCH.md (Show HN draft). `Dockerfile` + `npm start` (tsx is a runtime dep); verified a production-only `npm ci --omit=dev` install boots and deploys. Real-team auth via `PERCH_TRUSTED_PROXY_HEADER` (SSO proxy). `GET /v1/stats` for adoption signals. `perch mcp-install` one-liner. **Not yet pushed to a remote or made public — that is the user's trigger.**
+- **Open-source-ready and self-hostable.** MIT LICENSE, SECURITY.md, CONTRIBUTING.md, LAUNCH.md (Show HN draft). `Dockerfile` + `npm start` (tsx is a runtime dep); verified a production-only `npm ci --omit=dev` install boots and deploys. Real-team auth via `PERCH_TRUSTED_PROXY_HEADER` (SSO proxy). `GET /v1/stats` for adoption signals. `perch mcp-install` one-liner. **PUBLISHED: public repo at https://github.com/mandarwagh9/perch (MIT), pushed 2026-07-24.**
 
 ## Modules (all under `src/`)
 
