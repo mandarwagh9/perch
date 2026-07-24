@@ -97,12 +97,71 @@ describe('Perch HTTP — the full loop over the wire', () => {
   });
 
   test('a bad bundle is rejected with a machine-readable code', async () => {
+    const tok = await devToken('a@acme.com');
     const res = await fetch(`${base}/v1/deploy`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ownerEmail: 'a@acme.com', manifest: { name: 'x', entry: 'index.js' }, files: [{ path: 'index.js', content: 'no export here' }] }),
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ manifest: { name: 'x', entry: 'index.js' }, files: [{ path: 'index.js', content: 'no export here' }] }),
     });
     assert.equal(res.status, 400);
     assert.equal((await json(res)).error, 'no_default_export');
+  });
+
+  test('deploying a new app WITHOUT a token is rejected (no anonymous code execution)', async () => {
+    const res = await fetch(`${base}/v1/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ manifest: { name: 'x', entry: 'index.js' }, files: [{ path: 'index.js', content: 'export default async () => "hi"' }] }),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  test('owner cannot be spoofed via the body — it comes from the token', async () => {
+    const tok = await devToken('real@acme.com');
+    const res = await fetch(`${base}/v1/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ ownerEmail: 'ceo@victim.com', manifest: { name: 'spoof', entry: 'index.js' }, files: [{ path: 'index.js', content: 'export default async () => "x"' }] }),
+    });
+    const { appId } = await json(res);
+    // The victim must NOT see this app; the real deployer owns it.
+    const victim = await devToken('ceo@victim.com');
+    const victimList = (await json(await fetch(`${base}/v1/apps`, { headers: { authorization: `Bearer ${victim}` } }))).apps as Array<{ id: string }>;
+    assert.ok(!victimList.some((a) => a.id === appId));
+  });
+
+  test('a path-traversal file path is rejected (zip-slip guard)', async () => {
+    const tok = await devToken('a@acme.com');
+    const res = await fetch(`${base}/v1/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ manifest: { name: 'evil', entry: 'index.js' }, files: [{ path: 'index.js', content: 'export default async()=>1' }, { path: '../../escape.js', content: 'x' }] }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await json(res)).error, 'bad_path');
+  });
+
+  test('app responses carry a sandboxing CSP and cannot set cookies', async () => {
+    const tok = await devToken('a@acme.com');
+    const { appId } = await json(await fetch(`${base}/v1/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ manifest: { name: 'headery', entry: 'index.js' }, files: [{ path: 'index.js', content: 'export default async () => ({ headers: { "set-cookie": "evil=1" }, body: "hi" })' }] }),
+    }));
+    await fetch(`${base}/v1/apps/${appId}/share`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` }, body: JSON.stringify({ principal: 'public', role: 'user' }) });
+    const r = await fetch(`${base}/a/${appId}`);
+    assert.match(r.headers.get('content-security-policy') ?? '', /sandbox/);
+    assert.equal(r.headers.get('set-cookie'), null); // app-set cookie was stripped
+  });
+
+  test('sign-in rejects an open-redirect via backslash', async () => {
+    const r = await fetch(`${base}/signin`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'email=a@acme.com&next=/%5Cevil.com',
+      redirect: 'manual',
+    });
+    assert.equal(r.status, 302);
+    assert.equal(r.headers.get('location'), '/my'); // not /\evil.com
   });
 });

@@ -82,9 +82,14 @@ human ─▶ /a/:appId ─▶ Supervisor (auth+authz+ratelimit) ─▶ Sandbox (
 
 ## Security posture (honest)
 
-The untrusted-code boundary is **defense in depth**: a `vm.SourceTextModule` with a deny-all import linker (no `require`/`import`/`fetch`/`process`, no `eval`), inside a child process under Node's `--permission` model (no filesystem write, no child processes, no workers, no native addons), with a wall-clock timeout and heap cap. The app's only I/O is an async capability bridge to *its own* storage facet.
+The untrusted-code boundary is **defense in depth**, and it was adversarially reviewed (the review found a real vm-escape via injected-object constructors, now fixed and regression-tested):
 
-This is a real, tested boundary — but `vm` is not a hostile-multi-tenant guarantee on its own. The `Sandbox` interface is swappable: production would drop in V8 isolates, gVisor, or Cloudflare Workers-for-Platforms behind the same interface. This is stated so the boundary is not overclaimed.
+- **Realm isolation.** The app can never hold a reference to a host-realm object. `console`, `ctx`, and `request` are built *inside* the vm context by a trusted bootstrap that then erases its host bridges from the global; all data crosses as JSON primitives. With `codeGeneration.strings:false`, the context's own `Function`/`eval` are dead, so `ctx.store.get.constructor('return process')()` throws. (Tested: `test/sandbox.test.ts` "cannot escape the vm ... via injected-object constructors".)
+- **Deny-all imports** (`vm.SourceTextModule` linker) and no `require`/`fetch`/`process`/`Buffer` in the context.
+- **Process containment** under Node's `--permission` model: no filesystem write, no child processes, no workers, no native addons, and reads scoped to the sandbox source dir — so even a hypothetical escape cannot read the control-plane DB (which lives under `.perch-data/`).
+- **Load-shedding, timeout, heap cap** per app; the app's only I/O is an async capability bridge to *its own* storage facet.
+
+**What this is not:** Node's `vm` is still not a hostile-multi-tenant guarantee, and Node's permission model does not cover network egress, so a future escape could in principle still open a socket. The `Sandbox` interface is swappable: production drops in V8 isolates, gVisor, or Cloudflare Workers-for-Platforms (which *can* deny egress) behind the same interface. Stated plainly so the boundary is not overclaimed. Also hardened per review: deploy requires an authenticated principal (owner is derived from the token, never the body), app responses are served with a sandboxing CSP and cannot set cookies, the rate-limiter keys on the trusted socket IP, admin tokens compare in constant time, and deploy rejects path-traversal file paths.
 
 ## Status
 

@@ -6,9 +6,10 @@
 
 ## Current state (2026-07-24)
 
-- **Built end to end and green.** `npm test` = 67 tests passing; `npx tsc --noEmit` clean; `npm run demo` runs the whole thesis.
+- **Built end to end and green.** `npm test` = 74 tests passing; `npx tsc --noEmit` clean; `npm run demo` runs the whole thesis.
 - Landing page + recipient UI + sign-in shipped and screenshot-verified (dark/amber design system).
 - Verified live: CLI deploy+run of a standup logger; MCP stdio handshake + deploy-via-tool.
+- **Adversarial security review done and findings fixed** (see below). It caught a real vm-escape (host-realm `Function` via injected-object `.constructor`) plus auth/DoS issues — all fixed and regression-tested.
 
 ## Modules (all under `src/`)
 
@@ -46,9 +47,20 @@ Local git repo at `C:\Users\Mandar\perch` (no remote yet). Commits are conventio
 - Per-file SQLite DB per app (currently one DB, app_kv keyed by appId — isolation enforced at the `appStore(appId)` interface).
 - Billing, custom domains, multi-node scaling, `manifest.env` injection into the sandbox.
 
+## Security review — fixed (2026-07-24)
+
+- **C1 vm escape** (untrusted code reached host realm via `ctx.store.get.constructor`): fixed by realm isolation — app-facing objects are built inside the context, host bridges erased from the global, data crosses as JSON primitives; `--allow-fs-read` scoped to the src dir (DB unreadable). Regression test in place.
+- **C2** dev-token endpoint now OFF by default (localhost-gated in server.ts).
+- **H1** deploy requires an authenticated principal; owner derived from token, never the body.
+- **H2** app responses carry a sandboxing CSP and cannot set cookies.
+- **M1** rate-limit keys on the trusted socket IP; bucket map bounded.
+- **M2** per-app invoke queue capped (503 on overload).
+- **M3** open-redirect via backslash blocked; **M4** deploy rejects path-traversal paths; **L1** admin tokens compare in constant time; **L3** `manifest.env` now delivered to `ctx.env`.
+- Residual (documented): Node `vm` is not a hostile-mt guarantee and its permission model does not cover network egress — swap the `Sandbox` for isolated-vm / Workers-for-Platforms for real hostile multi-tenancy.
+
 ## Next steps (if resumed)
 
-1. Address any findings from the adversarial security review (was running at end of build session).
-2. Add a stronger sandbox adapter (QuickJS-WASM or isolated-vm) behind `Sandbox`.
-3. Wire Google OIDC.
+1. Add a stronger sandbox adapter (QuickJS-WASM or isolated-vm) behind `Sandbox` — closes the residual egress caveat.
+2. Wire Google OIDC behind `AuthProvider`.
+3. Per-app subdomains for full origin isolation of app HTML (CSP sandbox is the interim mitigation).
 4. Deploy: containerize the server; the sandbox needs a host that allows child processes.

@@ -3,7 +3,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { AppRecord, AppRequest, AppResponse, AppStore, User } from './types.ts';
 
-const HOST_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sandbox-host.mjs');
+const SRC_DIR = path.dirname(fileURLToPath(import.meta.url));
+const HOST_PATH = path.join(SRC_DIR, 'sandbox-host.mjs');
 
 export interface RunResult {
   response: AppResponse;
@@ -22,6 +23,7 @@ export interface ProcessSandboxOptions {
   timeoutMs?: number; // wall-clock cap per request (default 5000)
   idleMs?: number; // kill a warm child after this much inactivity — scale-to-zero (default 30000)
   memMb?: number; // per-app heap cap (default 128)
+  maxQueue?: number; // max in-flight+queued invokes per app before shedding load (default 32)
 }
 
 interface Inflight {
@@ -38,6 +40,7 @@ interface Entry {
   tail: Promise<unknown>; // serializes invokes per child
   idleTimer: NodeJS.Timeout | null;
   stderr: string[];
+  pending: number; // in-flight + queued invokes, for load-shedding
 }
 
 /**
@@ -58,6 +61,7 @@ export class ProcessSandbox implements Sandbox {
       timeoutMs: 5000,
       idleMs: 30_000,
       memMb: 128,
+      maxQueue: 32,
       ...options,
     };
   }
@@ -65,12 +69,25 @@ export class ProcessSandbox implements Sandbox {
   async run(app: AppRecord, request: AppRequest, user: User | null): Promise<RunResult> {
     if (this.closed) throw new Error('sandbox is shut down');
     const entry = this.getOrSpawn(app.id);
+    // Shed load rather than grow an unbounded queue: one child serves an app one request
+    // at a time, so a flood on a slow app is bounded here.
+    if (entry.pending >= this.opts.maxQueue) {
+      throw new Error('app is overloaded, try again shortly');
+    }
+    entry.pending += 1;
     // Serialize invocations on a single child so store IPC never interleaves.
     const result = entry.tail.then(
       () => this.invokeOn(entry, app, request, user),
       () => this.invokeOn(entry, app, request, user),
     );
-    entry.tail = result.catch(() => undefined);
+    entry.tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    result.then(
+      () => (entry.pending -= 1),
+      () => (entry.pending -= 1),
+    );
     return result;
   }
 
@@ -91,7 +108,11 @@ export class ProcessSandbox implements Sandbox {
         '--no-warnings',
         '--experimental-vm-modules',
         '--permission',
-        '--allow-fs-read=*',
+        // Scope reads to the sandbox source dir only. The app's code arrives over IPC (not
+        // a file), so after startup the child needs no fs at all. Crucially this EXCLUDES
+        // the control-plane DB under .perch-data/, so even a vm escape cannot read it.
+        `--allow-fs-read=${SRC_DIR}`,
+        `--allow-fs-read=${SRC_DIR}${path.sep}*`,
         `--max-old-space-size=${this.opts.memMb}`,
       ],
       stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
@@ -104,6 +125,7 @@ export class ProcessSandbox implements Sandbox {
       tail: Promise.resolve(),
       idleTimer: null,
       stderr: [],
+      pending: 0,
       ready: new Promise<void>((resolve) => {
         const onMsg = (m: unknown) => {
           if (isMsg(m) && m.t === 'ready') {
@@ -141,7 +163,8 @@ export class ProcessSandbox implements Sandbox {
       } catch (e) {
         value = null;
       }
-      entry.child.send({ t: 'store-res', id: m.id, value });
+      // Reply with a JSON string so only primitives cross the realm boundary.
+      entry.child.send({ t: 'store-res', id: m.id, value: JSON.stringify(value === undefined ? null : value) });
       return;
     }
     if ((m.t === 'result' || m.t === 'error') && entry.inflight && m.invokeId === entry.inflight.invokeId) {
@@ -199,6 +222,7 @@ export class ProcessSandbox implements Sandbox {
             source: entrySource(app),
             request,
             user,
+            env: app.manifest.env ?? {},
           });
         }),
     );

@@ -1,9 +1,19 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { Store } from './store.ts';
 import type { AuthProvider } from './auth.ts';
 import type { Sandbox } from './sandbox.ts';
 import { authorize } from './permissions.ts';
 import { RateLimiter } from './ratelimit.ts';
 import type { AppRecord, AppRequest, AppResponse, Role, User } from './types.ts';
+
+/** Constant-time string compare, false on any length or value mismatch. */
+export function safeEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 export interface SupervisorDeps {
   store: Store;
@@ -38,8 +48,8 @@ export class Supervisor {
     this.limiter = deps.limiter ?? new RateLimiter({ capacity: 60, refillPerSec: 10 });
   }
 
-  /** Handle a request bound for `/a/:appId/*`. */
-  async handleAppRequest(appId: string, request: AppRequest, token: string | null): Promise<SupervisorResult> {
+  /** Handle a request bound for `/a/:appId/*`. `clientIp` must be the trusted socket IP. */
+  async handleAppRequest(appId: string, request: AppRequest, token: string | null, clientIp = 'local'): Promise<SupervisorResult> {
     const app = this.store.getApp(appId);
     if (!app) return plain(404, 'No such app');
 
@@ -54,7 +64,8 @@ export class Supervisor {
         : plain(401, 'Sign in to open this tool');
     }
 
-    const principalKey = user ? `u:${user.email}` : `ip:${request.headers['x-forwarded-for'] ?? 'anon'}`;
+    // Key on identity when signed in, else the trusted socket IP (never a spoofable header).
+    const principalKey = user ? `u:${user.email}` : `ip:${clientIp}`;
     if (!this.limiter.take(`${appId}:${principalKey}`)) {
       return plain(429, 'Too many requests');
     }
@@ -64,6 +75,9 @@ export class Supervisor {
       return { response, logs };
     } catch (e) {
       const err = e as Error & { logs?: string[] };
+      if (/overloaded/.test(String(err.message))) {
+        return { response: { status: 503, headers: { 'content-type': 'text/plain', 'retry-after': '1' }, body: 'Busy, try again' }, logs: [] };
+      }
       // Never leak the failure detail into the app response, but keep it in the logs
       // so the owner can see WHY their tool broke.
       const logs = [...(err.logs ?? []), `[error] ${String(err.message)}`];
@@ -76,7 +90,7 @@ export class Supervisor {
    * a bearer token for an editor, or the app's admin token (handed to the deployer).
    */
   canManage(app: AppRecord, token: string | null, adminToken: string | null): { ok: boolean; user: User | null; role: Role | null } {
-    if (adminToken && adminToken === app.adminToken) return { ok: true, user: null, role: 'editor' };
+    if (safeEqual(adminToken, app.adminToken)) return { ok: true, user: null, role: 'editor' };
     const user = this.auth.identify(token);
     const shares = this.store.getShares(app.id);
     const decision = authorize(app.ownerEmail, shares, user, 'editor');

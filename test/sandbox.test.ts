@@ -118,6 +118,27 @@ describe('ProcessSandbox — the security boundary (untrusted code is contained)
     assert.deepEqual(JSON.parse(response.body!), { process: 'undefined', require: 'undefined', Buffer: 'undefined' });
   });
 
+  test('cannot escape the vm to the host realm via injected-object constructors', async () => {
+    // The classic vm break: reach a host-realm Function via a host object's .constructor,
+    // then `return process`. Every reachable value must be context-realm only.
+    const app = deploy(`export default async (req, ctx) => {
+      const probe = (fn) => { try { return typeof fn(); } catch (e) { return 'blocked:' + e.name; } };
+      return { json: {
+        viaStore:   probe(() => ctx.store.get.constructor('return this.process')()),
+        viaConsole: probe(() => console.log.constructor('return this.process')()),
+        viaCtx:     probe(() => ctx.constructor.constructor('return this.process')()),
+        viaReq:     probe(() => req.constructor.constructor('return this.process')()),
+        viaBind:    probe(() => ctx.store.get.bind(null).constructor('return this.process')()),
+      } };
+    };`);
+    const { response } = await sandbox.run(app, req(), null);
+    const out = JSON.parse(response.body!);
+    // None of these may yield the host process object.
+    for (const [k, v] of Object.entries(out)) {
+      assert.notEqual(v, 'object', `escape via ${k} reached a host object`);
+    }
+  });
+
   test('eval / new Function is disabled inside apps', async () => {
     const app = deploy(`export default async () => {
       try { const x = eval('1+1'); return { json: { eval: x } }; }
@@ -138,6 +159,18 @@ describe('ProcessSandbox — resource limits', () => {
       await assert.rejects(() => fast.run(app, req(), null), /timed out/);
     } finally {
       await fast.shutdown();
+    }
+  });
+
+  test('sheds load past the queue cap instead of growing unbounded', async () => {
+    const capped = new ProcessSandbox({ storeFor: (id) => store.appStore(id), timeoutMs: 500, idleMs: 2000, maxQueue: 3 });
+    const app = deploy(`export default async () => { while (true) {} };`); // never completes -> queue fills
+    try {
+      const results = await Promise.allSettled(Array.from({ length: 8 }, () => capped.run(app, req(), null)));
+      const overloaded = results.filter((r) => r.status === 'rejected' && /overloaded/.test(String(r.reason?.message))).length;
+      assert.ok(overloaded >= 1, `expected some requests to be shed, got ${overloaded}`);
+    } finally {
+      await capped.shutdown();
     }
   });
 });

@@ -1,5 +1,14 @@
 import type { Store } from './store.ts';
+import { safeEqual } from './supervisor.ts';
 import type { AppFile, Manifest } from './types.ts';
+
+// Reject anything that could escape the bundle root when written to disk (zip-slip):
+// absolute paths, drive letters, backslashes, leading slash, or a `..` segment.
+function isUnsafePath(p: string): boolean {
+  if (p === '' || p.startsWith('/') || p.startsWith('\\') || p.includes('\\')) return true;
+  if (/^[A-Za-z]:/.test(p)) return true; // drive letter
+  return p.split('/').some((seg) => seg === '..');
+}
 
 export class DeployError extends Error {
   constructor(
@@ -43,6 +52,9 @@ export function validateBundle(manifest: unknown, files: unknown): asserts manif
     if (typeof f?.path !== 'string' || typeof f?.content !== 'string') {
       throw new DeployError('bad_file', 'each file needs a string path and content');
     }
+    if (isUnsafePath(f.path)) {
+      throw new DeployError('bad_path', `unsafe file path "${f.path}" (no absolute paths, "..", or backslashes)`);
+    }
     total += Buffer.byteLength(f.content, 'utf8');
   }
   if (total > MAX_BUNDLE_BYTES) throw new DeployError('too_big', `bundle exceeds ${MAX_BUNDLE_BYTES} bytes`);
@@ -65,7 +77,7 @@ export function deploy(store: Store, input: DeployInput, baseUrl: string): Deplo
   if (input.appId) {
     const existing = store.getApp(input.appId);
     if (!existing) throw new DeployError('not_found', `app ${input.appId} does not exist`);
-    if (!input.adminToken || input.adminToken !== existing.adminToken) {
+    if (!safeEqual(input.adminToken, existing.adminToken)) {
       throw new DeployError('forbidden', 'redeploy requires the correct adminToken');
     }
     store.updateFiles(existing.id, input.files, input.manifest);

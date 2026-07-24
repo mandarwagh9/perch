@@ -35,7 +35,9 @@ export class Perch {
     this.sandbox = new ProcessSandbox({ storeFor: (id) => this.store.appStore(id) });
     this.supervisor = new Supervisor({ store: this.store, auth: this.auth, sandbox: this.sandbox });
     this.baseUrl = opts.baseUrl ?? 'http://localhost:8787';
-    this.allowDevTokens = opts.allowDevTokens ?? true;
+    // Off by default: the dev-token endpoint mints a session for ANY email, so it must
+    // never be reachable in production. Callers opt in explicitly (tests, local dev).
+    this.allowDevTokens = opts.allowDevTokens ?? false;
   }
 
   get authProvider(): AuthProvider {
@@ -94,7 +96,7 @@ export class Perch {
       return sendJson(res, 200, { token: this.auth.issue(email, groups), email });
     }
 
-    if (p === '/v1/deploy' && method === 'POST') return this.deployRoute(req, res, token);
+    if (p === '/v1/deploy' && method === 'POST') return this.deployRoute(req, res, sess);
 
     if (p === '/v1/apps' && method === 'GET') {
       const user = this.auth.identify(sess);
@@ -110,18 +112,20 @@ export class Perch {
   }
 
   private async deployRoute(req: http.IncomingMessage, res: http.ServerResponse, token: string | null): Promise<void> {
-    const body = (await readJson(req)) as Partial<DeployInput> & { ownerEmail?: string };
+    const body = (await readJson(req)) as Partial<DeployInput>;
     const user = this.auth.identify(token);
     const adminHeader = header(req, 'x-perch-admin');
-    const ownerEmail = user?.email ?? body.ownerEmail;
-    if (!body.appId && !ownerEmail) return sendJson(res, 401, { error: 'unauthenticated', message: 'a bearer token or ownerEmail is required to deploy' });
+    // Owner is ALWAYS derived from the authenticated principal, never from the body —
+    // a client cannot deploy code under someone else's identity.
+    const ownerEmail = user?.email;
+    if (!body.appId && !ownerEmail) return sendJson(res, 401, { error: 'unauthenticated', message: 'sign in (bearer token) to deploy a new app' });
     try {
       const result = deploy(
         this.store,
         {
           manifest: body.manifest!,
           files: body.files ?? [],
-          ownerEmail: ownerEmail ?? 'unknown@local',
+          ownerEmail: ownerEmail ?? '',
           appId: body.appId,
           adminToken: body.adminToken ?? adminHeader ?? undefined,
         },
@@ -233,13 +237,26 @@ export class Perch {
       body: body.length ? body : null,
     };
 
-    const { response, logs } = await this.supervisor.handleAppRequest(appId, appReq, sessionToken);
+    const clientIp = req.socket.remoteAddress ?? 'local';
+    const { response, logs } = await this.supervisor.handleAppRequest(appId, appReq, sessionToken, clientIp);
     this.logs.append(appId, logs);
 
     if (response.status === 401 && accepts(req, 'text/html')) {
       return sendHtml(res, 401, renderAppFrame(appId, this.baseUrl));
     }
-    res.writeHead(response.status ?? 200, { 'content-type': 'text/plain', ...(response.headers ?? {}) });
+
+    // Harden untrusted app output. The CSP `sandbox` directive (without allow-same-origin)
+    // makes the browser treat the response as a unique opaque origin, so app JS cannot read
+    // the perch_session cookie or call /v1/* as the viewer. App-set cookies are stripped.
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(response.headers ?? {})) {
+      if (k.toLowerCase() === 'set-cookie') continue; // apps may not set cookies
+      headers[k] = v;
+    }
+    if (!headers['content-type'] && !headers['Content-Type']) headers['content-type'] = 'text/plain; charset=utf-8';
+    headers['content-security-policy'] = "sandbox allow-scripts allow-forms allow-popups allow-modals";
+    headers['x-content-type-options'] = 'nosniff';
+    res.writeHead(response.status ?? 200, headers);
     res.end(response.body ?? '');
   }
 
@@ -328,9 +345,10 @@ function pickHeaders(req: http.IncomingMessage): Record<string, string> {
   }
   return out;
 }
-// Only allow same-origin relative redirects (no open-redirect via //host or http://).
+// Only allow same-origin relative redirects. Rejects //host, http://, and backslash
+// tricks (browsers normalize "/\" to "//", enabling open redirects).
 function safeNext(next: string | null): string {
-  if (!next || !next.startsWith('/') || next.startsWith('//')) return '/my';
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return '/my';
   return next;
 }
 function isPrincipal(v: unknown): v is Principal {
