@@ -27,6 +27,14 @@ Requires Node 22+ (Perch uses the built-in `node:sqlite`).
   `docs/superpowers/specs/2026-07-24-perch-design.md` for the intended shape.
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
 
+## License of contributions
+
+Perch is source-available under the PolyForm Noncommercial license, not an OSI open-source
+license. By contributing, you agree your contribution is provided under that same license and
+that the maintainer may also license the project (including your contribution) commercially,
+for example as the hosted service. If that is not something you want, please do not submit a
+contribution.
+
 ## The highest-value contributions right now
 
 1. **A hardened `Sandbox` adapter** (isolated-vm, QuickJS-WASM, or Cloudflare

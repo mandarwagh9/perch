@@ -8,7 +8,7 @@
 
 ## 1. Why this exists (the thesis)
 
-YC's Fall 2026 RFS "A Cloud for Small Software" (Pete Koomen) observes that agents made *building* bespoke 1–50-user tools easy, but **deploying, securing, and sharing** them is still hard, because incumbent clouds were built for Big Software. It names three hard sub-problems:
+Agents made *building* bespoke 1–50-user tools easy, but **deploying, securing, and sharing** them is still hard, because incumbent clouds were built for Big Software. Three hard sub-problems remain:
 
 1. **Per-company environment customization**
 2. **Auth & permissions**
@@ -16,7 +16,7 @@ YC's Fall 2026 RFS "A Cloud for Small Software" (Pete Koomen) observes that agen
 
 Bar: *"as easy to share with your colleagues as a Google Doc."*
 
-**Our specific bet, one layer sharper than the RFS:** the primary *user* of this cloud is not a human clicking "deploy" — it is the **agent** building the software. When Claude/Cursor/an agent finishes a small tool, it calls Perch directly (MCP + REST) and gets back a shareable, permissioned URL. Humans never learn deploy vocabulary; agents never touch human dashboards. Perch is the deployment substrate the agent reaches for *while building*.
+**Our specific bet:** the primary *user* of this cloud is not a human clicking "deploy" — it is the **agent** building the software. When Claude/Cursor/an agent finishes a small tool, it calls Perch directly (MCP + REST) and gets back a shareable, permissioned URL. Humans never learn deploy vocabulary; agents never touch human dashboards. Perch is the deployment substrate the agent reaches for *while building*.
 
 This choice is what makes Perch defensible rather than "another PaaS." The graveyard (Glitch, Heroku, Darklang, Airplane) teaches four hard lessons; the architecture below is designed to answer all four:
 
@@ -75,7 +75,7 @@ Five modules, each independently testable, communicating through small interface
 - **Honesty note:** process + Node permission model is a *real* isolation boundary but not a hostile-multi-tenant guarantee; the spec documents the upgrade path (V8 isolates / gVisor / WfP) behind the same interface. A stronger QuickJS-WASM tier is a planned hardening pass.
 
 ### 3.3 Supervisor — `src/supervisor.ts` (+ `src/auth.ts`)
-- **Purpose:** the Cloudflare "your code runs first" pattern. Every request to `/a/:appId/*` hits the supervisor **before** any app code: authenticate → authorize against the share ACL → rate-limit → construct the scoped `ctx` → forward into the sandbox. Answers RFS #2 and #3.
+- **Purpose:** the Cloudflare "your code runs first" pattern. Every request to `/a/:appId/*` hits the supervisor **before** any app code: authenticate → authorize against the share ACL → rate-limit → construct the scoped `ctx` → forward into the sandbox. Answers sub-problems #2 and #3.
 - **Auth seam:** `AuthProvider` interface (`identify(request) → user | null`). v1 provider: signed email-token (dev) with org = email domain. Google OIDC is a drop-in.
 - **ACL model:** share = `(appId, principal, role)`. principal ∈ {`user:email`, `group:name`, `org:domain`, `public`}. role ∈ {`viewer`, `user`, `editor`} (viewer=see listing, user=run it, editor=run+manage shares). Owner is implicit editor.
 

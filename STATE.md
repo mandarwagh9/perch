@@ -2,7 +2,7 @@
 
 **What:** an agent-native cloud for small software. The agent deploys the tools it builds (via MCP/CLI), tools run sandboxed with isolated storage, are shared like a Google Doc, and eject to source. Reference implementation, Node 22 + TypeScript, `node:test`, zero runtime framework.
 
-**Why it exists:** YC Fall 2026 RFS "A Cloud for Small Software" (Koomen), sharpened so the *agent* is the primary user. Full market memo led to this build.
+**Why it exists:** agents made building bespoke internal tools trivial; deploying, securing, and sharing them did not get easier. Perch is that missing layer, sharpened so the *agent* is the primary user. Positioned as a hosted service (source-available, noncommercial license; commercial use via the hosted plan).
 
 ## Current state (2026-07-24)
 
@@ -10,7 +10,8 @@
 - Landing page + recipient UI + sign-in shipped and screenshot-verified (dark/amber design system).
 - Verified live: CLI deploy+run of a standup logger; MCP stdio handshake + deploy-via-tool.
 - **Adversarial security review done and findings fixed** (see below). It caught a real vm-escape (host-realm `Function` via injected-object `.constructor`) plus auth/DoS issues — all fixed and regression-tested.
-- **Open-source-ready and self-hostable.** MIT LICENSE, SECURITY.md, CONTRIBUTING.md, LAUNCH.md (Show HN draft). `Dockerfile` + `npm start` (tsx is a runtime dep); verified a production-only `npm ci --omit=dev` install boots and deploys. Real-team auth via `PERCH_TRUSTED_PROXY_HEADER` (SSO proxy). `GET /v1/stats` for adoption signals. `perch mcp-install` one-liner. **PUBLISHED: public repo at https://github.com/mandarwagh9/perch (MIT), pushed 2026-07-24.**
+- **Source-available and self-hostable.** LICENSE = PolyForm Noncommercial 1.0.0 (free for noncommercial eval only; commercial use via the hosted service or a commercial license). SECURITY.md, CONTRIBUTING.md, LAUNCH.md. `Dockerfile` + `npm start` (tsx is a runtime dep); verified a production-only `npm ci --omit=dev` install boots and deploys. Real-team auth via `PERCH_TRUSTED_PROXY_HEADER` (SSO proxy). `GET /v1/stats` for adoption signals. `perch mcp-install` one-liner. **PUBLISHED: public repo at https://github.com/mandarwagh9/perch, pushed 2026-07-24.**
+- Positioned as a hosted service; the origin-attribution framing was removed at the user's request (do not reintroduce it).
 
 ## Modules (all under `src/`)
 

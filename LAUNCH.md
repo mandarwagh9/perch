@@ -1,53 +1,47 @@
-# Launch notes (draft — not yet posted)
+# Launch notes (draft — not posted)
 
-Draft copy for the public launch. Nothing here is posted; pull the trigger when ready.
+Draft copy for the public launch of Perch as a hosted service with source-available code.
+Nothing here is posted; pull the trigger when ready.
 
-## Show HN title options
+## Positioning
 
-1. Show HN: Perch — an agent-native cloud for small software (self-hosted, MIT)
-2. Show HN: Perch — your agent deploys the tool it built, you share it like a Google Doc
-3. Show HN: Perch — a tiny cloud where AI-built internal tools land, run sandboxed, and eject to source
+Perch is an agent-native cloud for small software. The agent deploys the tool it built, your
+team opens it like a Google Doc, it runs sandboxed, and it can eject to source. Sold as a
+**hosted service** for teams; the source is available to read and evaluate (noncommercial).
 
-## Show HN body (draft)
+## Title options
 
-Perch is a small, self-hosted cloud for the throwaway internal tools your coding agent now
-builds in seconds. The twist: the **agent** is the user. It deploys over MCP or a CLI, gets
-a URL back, and shares it with your team the way you share a Google Doc. Tools run
-sandboxed with their own isolated storage, are private by default, and can eject to source
-at any time (no lock-in).
+1. Perch — the cloud where the software your agent builds lands
+2. Perch — your agent deploys the tool it built, your team opens it like a Google Doc
+3. Perch — a place for AI-built internal tools to run, be shared, and stay yours
 
-It came out of exploring YC's Fall 2026 RFS "A Cloud for Small Software." Building small
-tools got easy; deploying, securing, and sharing them did not. Perch takes those three on:
+## Short post (draft)
 
-- Runs arbitrary code safely: a locked-down vm sandbox, no fs/network/host access, only its
-  own storage capability. (It survived an adversarial review that found a real escape,
-  which is fixed and regression-tested — writeup in the repo.)
-- Auth and permissions built in: tools inherit org identity; the supervisor authorizes
-  every request before app code runs; share by person, group, org, or public.
-- Owned like a file: eject the exact source to a zip whenever you want.
+Perch is a small cloud for the throwaway internal tools your coding agent now builds in
+seconds. The twist: the agent is the user. It deploys over MCP or a CLI, gets a URL back, and
+shares it with your team the way you share a Google Doc. Tools run sandboxed with their own
+isolated storage, are private by default, and can export to source anytime.
 
-It's a reference implementation (Node 22 + TypeScript, zero runtime framework, 74 tests). I
-was honest in SECURITY.md about the boundary: Node's `vm` isn't a hostile-multi-tenant
-guarantee, so run it in a single trust domain (your team) for now; the `Sandbox` interface
-is built to swap in isolated-vm / Workers-for-Platforms for a public instance.
+It takes on the three things that stay hard after the code is written: running untrusted code
+safely, auth and permissions, and getting a tool to a teammate without friction. It shipped
+with an adversarial security review that found a real sandbox escape, now fixed and tested
+against. We are direct about the boundary in SECURITY.md rather than overclaiming it.
 
-Repo: <link>. Demo: `npm run demo` plays the whole thing in one narrated run. Would love
-feedback on the sandbox design and on whether the "agent deploys, human shares" shape is
-the right one.
+We run it for teams as a hosted service (managed isolation, SSO, support). The source is
+available to read and self-evaluate under a noncommercial license.
 
-## What I want feedback on
+Site: <link>. Get access: <link>.
 
-- Is the sandbox model sound? (SECURITY.md is deliberately honest about the limits.)
-- Does "the agent is the user of the cloud" resonate, or is the human-share flow the hook?
-- What would make you self-host this for your team?
+## What to ask for feedback on
+
+- Does "the agent is the user of the cloud" land, or is the human-share flow the hook?
+- What would make you want this hosted for your team?
 
 ## Where to post
 
-- Hacker News (Show HN), tied to the RFS moment.
-- The relevant agent-tooling communities (MCP directory, Claude/Cursor tool lists).
-- X thread with the 40-second demo recording.
+- Hacker News, the agent-tooling communities (MCP directories, Claude/Cursor tool lists), and
+  an X thread with a short demo recording.
 
-## The one metric that matters
+## The metric that matters
 
-Not stars. Watch `/v1/stats`: does anyone deploy a **second** tool, and does a tool get
-**shared** with a real teammate. Those are the aha moments.
+Not stars. Watch access requests, and once teams are on: repeat deploys and real shares.

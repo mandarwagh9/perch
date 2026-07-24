@@ -32,8 +32,8 @@ export interface SupervisorResult {
  * Supervisor — Perch's front door. EVERY request to an app passes through here
  * before a single line of app code runs: identify the caller, authorize against the
  * app's shares, rate-limit, and only then forward into the sandbox with a scoped ctx.
- * This is the "your code runs first" pattern, and it's how Perch answers the RFS's
- * auth/permissions and secure-sharing sub-problems.
+ * This is the "your code runs first" pattern, and it's how Perch answers the hard
+ * auth/permissions and secure-sharing problems.
  */
 export class Supervisor {
   private store: Store;
