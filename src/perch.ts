@@ -8,7 +8,7 @@ import { LogStore } from './logs.ts';
 import { deploy, DeployError, type DeployInput } from './deploy.ts';
 import { authorize } from './permissions.ts';
 import { makeZip } from './zip.ts';
-import { renderHome, renderMyTools, renderAppFrame } from './ui.ts';
+import { renderHome, renderMyTools, renderAppFrame, renderSignin } from './ui.ts';
 import type { AppRequest, Principal, Role } from './types.ts';
 
 export interface PerchOptions {
@@ -55,15 +55,29 @@ export class Perch {
     const p = url.pathname;
     const method = req.method ?? 'GET';
     const token = bearer(req);
+    const sess = token ?? cookie(req, 'perch_session'); // bearer (agents) or cookie (browser)
 
     // ---- app requests: /a/:appId/* ----
     if (p.startsWith('/a/')) return this.serveApp(req, res, url, method, token);
 
+    // ---- sign-in (browser sessions) ----
+    if (p === '/signin' && method === 'GET') return sendHtml(res, 200, renderSignin(safeNext(url.searchParams.get('next'))));
+    if (p === '/signin' && method === 'POST') {
+      const form = new URLSearchParams(await readBody(req));
+      const email = (form.get('email') ?? '').trim();
+      const next = safeNext(form.get('next'));
+      if (!email.includes('@')) return sendHtml(res, 400, renderSignin(next, 'Please enter a valid email.'));
+      const tok = this.auth.issue(email);
+      res.writeHead(302, { location: next, 'set-cookie': `perch_session=${encodeURIComponent(tok)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
+      res.end();
+      return;
+    }
+
     // ---- recipient UI ----
     if (p === '/' && accepts(req, 'text/html')) return sendHtml(res, 200, renderHome(this.baseUrl));
-    if (p === '/my' ) {
-      const user = this.auth.identify(token ?? cookie(req, 'perch_session'));
-      if (!user) return sendHtml(res, 200, renderHome(this.baseUrl, 'Sign in to see your tools.'));
+    if (p === '/my') {
+      const user = this.auth.identify(sess);
+      if (!user) { res.writeHead(302, { location: '/signin?next=%2Fmy' }); res.end(); return; }
       const apps = this.store.listAppsForPrincipal(user);
       return sendHtml(res, 200, renderMyTools(user, apps));
     }
@@ -83,14 +97,14 @@ export class Perch {
     if (p === '/v1/deploy' && method === 'POST') return this.deployRoute(req, res, token);
 
     if (p === '/v1/apps' && method === 'GET') {
-      const user = this.auth.identify(token);
+      const user = this.auth.identify(sess);
       if (!user) return sendJson(res, 401, { error: 'unauthenticated' });
       const apps = this.store.listAppsForPrincipal(user).map((a) => ({ id: a.id, name: a.name, owner: a.ownerEmail, createdAt: a.createdAt, url: `${this.baseUrl}/a/${a.id}` }));
       return sendJson(res, 200, { apps });
     }
 
     const appRoute = p.match(/^\/v1\/apps\/([^/]+)(\/(share|logs|eject|source))?$/);
-    if (appRoute) return this.appAdminRoute(req, res, method, token, appRoute[1]!, appRoute[3]);
+    if (appRoute) return this.appAdminRoute(req, res, method, sess, appRoute[1]!, appRoute[3]);
 
     return sendJson(res, 404, { error: 'not_found' });
   }
@@ -313,6 +327,11 @@ function pickHeaders(req: http.IncomingMessage): Record<string, string> {
     if (v) out[k] = v;
   }
   return out;
+}
+// Only allow same-origin relative redirects (no open-redirect via //host or http://).
+function safeNext(next: string | null): string {
+  if (!next || !next.startsWith('/') || next.startsWith('//')) return '/my';
+  return next;
 }
 function isPrincipal(v: unknown): v is Principal {
   return typeof v === 'string' && (v === 'public' || /^(user|group|org):.+/.test(v));
