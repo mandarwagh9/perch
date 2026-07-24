@@ -1,0 +1,25 @@
+{
+  "name": "perch",
+  "version": "0.1.0",
+  "description": "An agent-native cloud for small software — deployed by the agent, shared like a Google Doc, portable like a file.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "perch": "./src/cli.ts"
+  },
+  "scripts": {
+    "test": "node --import tsx --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/server.ts",
+    "mcp": "tsx src/mcp.ts",
+    "cli": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  }
+}
