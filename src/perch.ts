@@ -89,7 +89,7 @@ export class Perch {
       return sendJson(res, 200, { apps });
     }
 
-    const appRoute = p.match(/^\/v1\/apps\/([^/]+)(\/(share|logs|eject))?$/);
+    const appRoute = p.match(/^\/v1\/apps\/([^/]+)(\/(share|logs|eject|source))?$/);
     if (appRoute) return this.appAdminRoute(req, res, method, token, appRoute[1]!, appRoute[3]);
 
     return sendJson(res, 404, { error: 'not_found' });
@@ -155,6 +155,12 @@ export class Perch {
     if (sub === 'logs') {
       if (!manage.ok) return sendJson(res, manage.user ? 403 : 401, { error: 'forbidden' });
       return sendJson(res, 200, { logs: this.logs.get(appId) });
+    }
+
+    if (sub === 'source') {
+      // JSON source for agents (the zip is the human-facing portable form).
+      if (!canRun) return sendJson(res, user ? 403 : 401, { error: 'forbidden' });
+      return sendJson(res, 200, { manifest: app.manifest, files: app.files });
     }
 
     if (sub === 'eject') {
