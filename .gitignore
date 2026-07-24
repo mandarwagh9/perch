@@ -1,9 +1,0 @@
-node_modules/
-.perch-data/
-*.log
-dist/
-.DS_Store
-coverage/
-
-examples/*.zip
-*.zip
