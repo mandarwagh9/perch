@@ -7,7 +7,11 @@
   "bin": {
     "perch": "./src/cli.ts"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "start": "tsx src/server.ts",
     "test": "node --import tsx --test --test-reporter=spec \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/server.ts",
@@ -17,10 +21,10 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4"
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "tsx": "^4.19.2"
   }
 }

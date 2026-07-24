@@ -12,15 +12,21 @@ const perch = new Perch({
   secret: process.env.PERCH_SECRET,
   baseUrl,
   allowDevTokens,
+  trustedProxyHeader: process.env.PERCH_TRUSTED_PROXY_HEADER,
 });
 
 perch.listen(port).then(({ url }) => {
   // eslint-disable-next-line no-console
-  console.log(`Perch listening on ${url}`);
-  if (allowDevTokens) console.log('  ⚠ dev-token endpoint is ENABLED (local only). Set PERCH_DEV_TOKENS=false to disable.');
-  console.log(`  • recipient UI:   ${url}/my`);
-  console.log(`  • deploy API:     POST ${url}/v1/deploy`);
-  console.log(`  • dev token:      POST ${url}/v1/auth/dev-token  {"email":"you@acme.com"}`);
+  const log = console.log;
+  log(`Perch listening on ${url}`);
+  log(`  • recipient UI:   ${url}/my`);
+  log(`  • deploy API:     POST ${url}/v1/deploy`);
+  if (allowDevTokens) {
+    log(`  • dev token:      POST ${url}/v1/auth/dev-token  {"email":"you@acme.com"}`);
+    log('  ⚠ dev-token endpoint is ENABLED (mints a session for any email). Local use only; set PERCH_DEV_TOKENS=false to disable.');
+  } else {
+    log('  • auth:           dev tokens OFF. Set PERCH_TRUSTED_PROXY_HEADER for SSO, or PERCH_DEV_TOKENS=true for a trusted team.');
+  }
 });
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

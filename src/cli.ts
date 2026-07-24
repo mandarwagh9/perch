@@ -1,6 +1,7 @@
 #!/usr/bin/env -S node --import tsx
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PerchClient, type DeployArgs } from './client.ts';
 import type { AppFile, Manifest, Principal, Role } from './types.ts';
 
@@ -146,6 +147,20 @@ async function main(): Promise<void> {
       console.log(`${c.baseUrl}/a/${appId}`);
       break;
     }
+    case 'mcp-install': {
+      // One-line install so an agent (Claude Code / Cursor / ...) can deploy to Perch.
+      const mcpPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mcp.ts');
+      const url = process.env.PERCH_URL ?? state.url ?? 'http://localhost:8787';
+      console.log('Wire Perch into your coding agent as an MCP server.\n');
+      console.log('Claude Code:');
+      console.log(`  claude mcp add perch --env PERCH_URL=${url} -- npx tsx "${mcpPath}"\n`);
+      console.log('Cursor / other MCP clients — add to your MCP config:');
+      console.log(
+        JSON.stringify({ mcpServers: { perch: { command: 'npx', args: ['tsx', mcpPath], env: { PERCH_URL: url } } } }, null, 2),
+      );
+      console.log('\nThen your agent gets: perch_deploy, perch_list, perch_share, perch_logs, perch_source.');
+      break;
+    }
     default:
       console.log(`perch — deploy the small software your agent builds.
 
@@ -159,6 +174,7 @@ usage:
   perch eject <id> [out.zip]          download the source (portable)
   perch rm <id>                       delete a tool
   perch open <id>                     print the tool URL
+  perch mcp-install                   print the one-line MCP setup for your agent
 
 env: PERCH_URL (default http://localhost:8787), PERCH_TOKEN, PERCH_OWNER`);
   }

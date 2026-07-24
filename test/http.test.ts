@@ -154,6 +154,55 @@ describe('Perch HTTP — the full loop over the wire', () => {
     assert.equal(r.headers.get('set-cookie'), null); // app-set cookie was stripped
   });
 
+  test('/v1/stats reports aggregate counts (the adoption signals)', async () => {
+    const tok = await devToken('metrics@acme.com');
+    const before = await json(await fetch(`${base}/v1/stats`));
+    await fetch(`${base}/v1/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ manifest: { name: 'metric-tool', entry: 'index.js' }, files: [{ path: 'index.js', content: 'export default async () => "hi"' }] }),
+    });
+    const after = await json(await fetch(`${base}/v1/stats`));
+    assert.equal(after.deploys, before.deploys + 1);
+    assert.ok(after.apps >= 1);
+  });
+});
+
+describe('Perch — trusted proxy header auth (self-host behind SSO)', () => {
+  test('a trusted proxy header authenticates the user without a token', async () => {
+    const proxied = new Perch({ baseUrl: 'http://localhost', allowDevTokens: false, trustedProxyHeader: 'x-forwarded-email' });
+    const { url } = await proxied.listen(0);
+    try {
+      // Owner deploys, identified purely by the proxy header (no bearer/cookie).
+      const dep = await fetch(`${url}/v1/deploy`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-email': 'sso-user@acme.com' },
+        body: JSON.stringify({ manifest: { name: 'sso-tool', entry: 'index.js' }, files: [{ path: 'index.js', content: 'export default async () => ({ json: { ok: 1 } })' }] }),
+      });
+      assert.equal(dep.status, 200);
+      const { appId } = await json(dep);
+      // The same SSO identity can open it (owner), a different one cannot.
+      const mine = await fetch(`${url}/a/${appId}`, { headers: { 'x-forwarded-email': 'sso-user@acme.com', accept: 'application/json' } });
+      const theirs = await fetch(`${url}/a/${appId}`, { headers: { 'x-forwarded-email': 'other@else.com', accept: 'application/json' } });
+      assert.equal(mine.status, 200);
+      assert.equal(theirs.status, 403);
+    } finally {
+      await proxied.close();
+    }
+  });
+
+  test('without the trusted-header option configured, the header is ignored', async () => {
+    // Default Perch does not trust any proxy header, so the same request is anonymous -> 401.
+    const dep = await fetch(`${base}/v1/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-email': 'spoof@acme.com' },
+      body: JSON.stringify({ manifest: { name: 'nope', entry: 'index.js' }, files: [{ path: 'index.js', content: 'export default async () => 1' }] }),
+    });
+    assert.equal(dep.status, 401);
+  });
+});
+
+describe('Perch HTTP — misc', () => {
   test('sign-in rejects an open-redirect via backslash', async () => {
     const r = await fetch(`${base}/signin`, {
       method: 'POST',

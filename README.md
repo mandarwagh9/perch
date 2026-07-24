@@ -23,10 +23,14 @@ npm run dev     # start the server on :8787
 
 ## How an agent uses it
 
-**Over MCP** (the point of Perch). Point the MCP server at a running Perch and the agent gets 6 tools: `perch_deploy`, `perch_list`, `perch_share`, `perch_logs`, `perch_source`, `perch_dev_token`.
+**Over MCP** (the point of Perch). Point the MCP server at a running Perch and the agent gets 6 tools: `perch_deploy`, `perch_list`, `perch_share`, `perch_logs`, `perch_source`, `perch_dev_token`. Get the one-line setup for your agent:
+
+```bash
+npm run cli -- mcp-install     # prints the `claude mcp add ...` command + a config block
+```
 
 ```jsonc
-// in an MCP client (Claude Code, Cursor, ...) config
+// what it installs, in an MCP client (Claude Code, Cursor, ...) config
 { "mcpServers": { "perch": { "command": "npx", "args": ["tsx", "src/mcp.ts"], "env": { "PERCH_URL": "http://localhost:8787" } } } }
 ```
 
@@ -41,6 +45,36 @@ perch eject <appId>                       # take the source and leave
 ```
 
 **Over HTTP:** `POST /v1/deploy` with `{ manifest, files }`, then `/a/:appId/*` is the running tool.
+
+## Self-host it for your team
+
+Perch is meant to run in **one trust domain**: your team hosts it for its own members. That
+is both the safe way to run it (see security note) and the product's target use case.
+
+```bash
+docker build -t perch .
+docker run -p 8787:8787 \
+  -e PERCH_BASE_URL=https://tools.yourco.com \
+  -e PERCH_SECRET=$(openssl rand -hex 24) \
+  -e PERCH_TRUSTED_PROXY_HEADER=x-forwarded-email \
+  -v perch-data:/app/.perch-data \
+  perch
+```
+
+The sandbox forks child processes, so host it on a real container/VM platform (Cloud Run,
+Fly, Render, a VM) — not a function/edge runtime.
+
+**Auth options** (dev tokens are OFF by default when the base URL is not localhost):
+- **SSO (recommended):** put Perch behind Cloudflare Access, Google IAP, or oauth2-proxy and
+  set `PERCH_TRUSTED_PROXY_HEADER` to the header they inject (e.g. `x-forwarded-email`). The
+  proxy authenticates; Perch trusts that header. (Make sure the proxy strips client-supplied
+  copies of it.)
+- **Trusted team, no proxy:** set `PERCH_DEV_TOKENS=true` to enable email-token sign-in.
+- **Real OIDC:** implement the `AuthProvider` interface in `src/auth.ts` (Google OIDC is a
+  small drop-in).
+
+`GET /v1/stats` reports aggregate, no-PII usage (deploys, redeploys, shares, runs, ejects,
+apps) — watch repeat-deploys and shares, the two signals that mean people actually want it.
 
 ## What an app looks like
 
@@ -93,4 +127,10 @@ The untrusted-code boundary is **defense in depth**, and it was adversarially re
 
 ## Status
 
-Reference implementation. Node 22+ (uses built-in `node:sqlite`). Not built: billing, real OAuth (there is a pluggable auth seam with a dev email-token provider), custom domains, multi-node scaling. Each is a named seam in the spec, not a hidden gap.
+Reference implementation. Node 22+ (uses built-in `node:sqlite`). Not built: billing, real OAuth (there is a pluggable auth seam with a dev email-token provider and a trusted-proxy provider), custom domains, multi-node scaling. Each is a named seam in the spec, not a hidden gap.
+
+## Contributing & license
+
+Contributions welcome, especially a hardened `Sandbox` adapter or a real OIDC provider. See
+[CONTRIBUTING.md](CONTRIBUTING.md). Please read [SECURITY.md](SECURITY.md) before hosting a
+public instance. MIT licensed ([LICENSE](LICENSE)).

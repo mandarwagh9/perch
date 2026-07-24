@@ -22,7 +22,8 @@ describe('TokenAuth', () => {
 
   test('a tampered token is rejected', () => {
     const tok = auth.issue('bob@acme.com');
-    const tampered = tok.slice(0, -2) + (tok.endsWith('a') ? 'b' : 'a') + tok.slice(-1);
+    // Flip the first character to a definitely-different one (deterministic tamper).
+    const tampered = (tok[0] === 'A' ? 'B' : 'A') + tok.slice(1);
     assert.equal(auth.identify(tampered), null);
   });
 

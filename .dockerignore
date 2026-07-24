@@ -1,0 +1,8 @@
+node_modules
+.git
+.perch-data
+*.log
+coverage
+dist
+examples/*.zip
+docs

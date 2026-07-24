@@ -17,6 +17,13 @@ export interface PerchOptions {
   baseUrl?: string;
   /** Dev-only endpoint that mints a session token for any email. Off in production. */
   allowDevTokens?: boolean;
+  /**
+   * Name of a request header set by a trusted reverse proxy (e.g. Cloudflare Access,
+   * Google IAP, oauth2-proxy) carrying the authenticated user's email. When set, Perch
+   * trusts it for identity. ONLY enable this when a proxy in front sets AND strips the
+   * header from client input — otherwise it is a spoofable auth bypass.
+   */
+  trustedProxyHeader?: string;
 }
 
 export class Perch {
@@ -27,7 +34,9 @@ export class Perch {
   readonly logs = new LogStore();
   readonly baseUrl: string;
   private allowDevTokens: boolean;
+  private trustedProxyHeader: string | undefined;
   private server: http.Server | null = null;
+  private stats = { deploys: 0, redeploys: 0, shares: 0, runs: 0, ejects: 0 };
 
   constructor(opts: PerchOptions = {}) {
     this.store = new Store(opts.dbPath ?? ':memory:');
@@ -38,6 +47,7 @@ export class Perch {
     // Off by default: the dev-token endpoint mints a session for ANY email, so it must
     // never be reachable in production. Callers opt in explicitly (tests, local dev).
     this.allowDevTokens = opts.allowDevTokens ?? false;
+    this.trustedProxyHeader = opts.trustedProxyHeader?.toLowerCase();
   }
 
   get authProvider(): AuthProvider {
@@ -57,10 +67,12 @@ export class Perch {
     const p = url.pathname;
     const method = req.method ?? 'GET';
     const token = bearer(req);
-    const sess = token ?? cookie(req, 'perch_session'); // bearer (agents) or cookie (browser)
+    // Identity precedence: bearer token (agents/API) > trusted proxy header (SSO) > cookie.
+    const proxyEmail = this.trustedProxyHeader ? header(req, this.trustedProxyHeader) : null;
+    const sess = token ?? (proxyEmail && proxyEmail.includes('@') ? this.auth.issue(proxyEmail) : cookie(req, 'perch_session'));
 
     // ---- app requests: /a/:appId/* ----
-    if (p.startsWith('/a/')) return this.serveApp(req, res, url, method, token);
+    if (p.startsWith('/a/')) return this.serveApp(req, res, url, method, sess);
 
     // ---- sign-in (browser sessions) ----
     if (p === '/signin' && method === 'GET') return sendHtml(res, 200, renderSignin(safeNext(url.searchParams.get('next'))));
@@ -94,6 +106,11 @@ export class Perch {
       if (!email.includes('@')) return sendJson(res, 400, { error: 'bad_email' });
       const groups = Array.isArray((body as { groups?: unknown }).groups) ? ((body as { groups: string[] }).groups) : [];
       return sendJson(res, 200, { token: this.auth.issue(email, groups), email });
+    }
+
+    if (p === '/v1/stats' && method === 'GET') {
+      // Aggregate, no PII. The two signals that matter: repeat deploys and real shares.
+      return sendJson(res, 200, { ...this.stats, apps: this.store.countApps() });
     }
 
     if (p === '/v1/deploy' && method === 'POST') return this.deployRoute(req, res, sess);
@@ -131,6 +148,8 @@ export class Perch {
         },
         this.baseUrl,
       );
+      if (result.updated) this.stats.redeploys += 1;
+      else this.stats.deploys += 1;
       return sendJson(res, 200, result);
     } catch (e) {
       if (e instanceof DeployError) return sendJson(res, 400, { error: e.code, message: e.message });
@@ -159,6 +178,7 @@ export class Perch {
         const body = (await readJson(req)) as { principal?: string; role?: string };
         if (!isPrincipal(body.principal) || !isRole(body.role)) return sendJson(res, 400, { error: 'bad_share' });
         this.store.putShare(appId, body.principal, body.role);
+        this.stats.shares += 1;
         return sendJson(res, 200, { shares: this.store.getShares(appId) });
       }
       if (method === 'DELETE') {
@@ -188,6 +208,7 @@ export class Perch {
         ...app.files.map((f) => ({ path: f.path, content: f.content })),
         { path: 'README.md', content: `# ${app.name}\n\nEjected from Perch. Runs anywhere — this is your code, portable like a file.\n` },
       ]);
+      this.stats.ejects += 1;
       res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${app.id}.zip"` });
       res.end(zip);
       return;
@@ -240,6 +261,7 @@ export class Perch {
     const clientIp = req.socket.remoteAddress ?? 'local';
     const { response, logs } = await this.supervisor.handleAppRequest(appId, appReq, sessionToken, clientIp);
     this.logs.append(appId, logs);
+    if ((response.status ?? 200) < 400) this.stats.runs += 1; // a real, authorized execution
 
     if (response.status === 401 && accepts(req, 'text/html')) {
       return sendHtml(res, 401, renderAppFrame(appId, this.baseUrl));

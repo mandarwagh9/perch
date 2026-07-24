@@ -104,6 +104,11 @@ export class Store {
     return rec;
   }
 
+  countApps(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS c FROM apps').get() as { c: number };
+    return row.c;
+  }
+
   getApp(id: string): AppRecord | null {
     const row = this.db.prepare('SELECT * FROM apps WHERE id = ?').get(id) as
       | Record<string, unknown>
