@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/server.ts",
     "mcp": "tsx src/mcp.ts",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "demo": "tsx examples/demo.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
