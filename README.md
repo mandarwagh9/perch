@@ -2,6 +2,8 @@
 
 **The cloud where the software your agent builds lands.** Deployed by the agent in one call, shared like a Google Doc, portable like a file.
 
+**Website:** [mandarwagh9.github.io/perch](https://mandarwagh9.github.io/perch/) · **License:** MIT · **Status:** reference implementation, 77 tests
+
 Perch is a working reference implementation of an *agent-native* cloud for small software. It takes YC's Fall 2026 RFS "A Cloud for Small Software" (Pete Koomen) one step further: the primary user is the **agent** building the software, not a human clicking a deploy button. When an agent finishes a small tool, it calls Perch (over MCP or a CLI), gets back a shareable, permissioned URL, and moves on.
 
 It answers the three hard sub-problems the RFS names, in the platform itself:
